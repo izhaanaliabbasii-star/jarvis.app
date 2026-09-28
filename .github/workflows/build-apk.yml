@@ -2,9 +2,6 @@ name: Build JARVIS APK
 
 on:
   push:
-    paths:
-      - "JARVIS-Android.zip"
-      - ".github/workflows/build.yml"
   workflow_dispatch:
 
 jobs:
@@ -12,32 +9,45 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Check out the repo
+      - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Check repository files
+      - name: Find Android ZIP
+        id: zip
         run: |
-          echo "Files in repository:"
-          ls -la
-          echo "ZIP files:"
-          find . -maxdepth 2 -type f -iname "*.zip"
+          echo "Repository files:"
+          find . -maxdepth 3 -type f | sort
 
-      - name: Unzip JARVIS project
-        run: |
-          unzip -o "JARVIS-Android.zip" -d jarvis-project
+          ZIP=$(find . -maxdepth 3 -type f -iname "*.zip" | head -n 1)
 
-      - name: Locate Android project
-        id: find_root
-        run: |
-          ROOT=$(find jarvis-project -name "gradlew" -type f | head -n 1)
-
-          if [ -z "$ROOT" ]; then
-            echo "ERROR: Could not find gradlew inside the ZIP."
-            find jarvis-project -maxdepth 5 -type f | head -100
+          if [ -z "$ZIP" ]; then
+            echo "ERROR: No ZIP file found!"
             exit 1
           fi
 
-          ROOT=$(dirname "$ROOT")
+          echo "Found ZIP: $ZIP"
+          echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
+
+      - name: Unzip JARVIS project
+        run: |
+          mkdir -p jarvis-project
+          unzip -o "${{ steps.zip.outputs.zip }}" -d jarvis-project
+
+      - name: Find Gradle project
+        id: project
+        run: |
+          echo "Searching for Gradle project..."
+
+          GRADLEW=$(find jarvis-project -type f -name "gradlew" | head -n 1)
+
+          if [ -z "$GRADLEW" ]; then
+            echo "ERROR: gradlew was not found."
+            echo "ZIP contents:"
+            find jarvis-project -maxdepth 5 -type f | sort | head -200
+            exit 1
+          fi
+
+          ROOT=$(dirname "$GRADLEW")
 
           echo "Android project root: $ROOT"
           echo "root=$ROOT" >> "$GITHUB_OUTPUT"
@@ -49,14 +59,15 @@ jobs:
           java-version: "17"
 
       - name: Make Gradle executable
-        run: chmod +x "${{ steps.find_root.outputs.root }}/gradlew"
+        run: chmod +x "${{ steps.project.outputs.root }}/gradlew"
 
       - name: Build JARVIS APK
-        working-directory: ${{ steps.find_root.outputs.root }}
+        working-directory: ${{ steps.project.outputs.root }}
         run: ./gradlew assembleDebug --stacktrace
 
       - name: Upload JARVIS APK
         uses: actions/upload-artifact@v4
         with:
           name: JARVIS-APK
-          path: "${{ steps.find_root.outputs.root }}/app/build/outputs/apk/debug/*.apk"
+          path: "${{ steps.project.outputs.root }}/app/build/outputs/apk/debug/*.apk"
+
