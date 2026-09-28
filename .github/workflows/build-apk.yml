@@ -9,61 +9,50 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Check out repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Find Android ZIP
+      - name: Find ZIP
         id: zip
         run: |
-          echo "Repository files:"
-          find . -maxdepth 3 -type f | sort
-
           ZIP=$(find . -maxdepth 3 -type f -iname "*.zip" | head -n 1)
 
           if [ -z "$ZIP" ]; then
-            echo "ERROR: No ZIP file found!"
+            echo "ERROR: No ZIP found"
             exit 1
           fi
 
-          echo "Found ZIP: $ZIP"
+          echo "Found: $ZIP"
           echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
 
-      - name: Unzip JARVIS project
+      - name: Extract JARVIS
         run: |
           mkdir -p jarvis-project
           unzip -o "${{ steps.zip.outputs.zip }}" -d jarvis-project
 
-      - name: Find Gradle project
+      - name: Find Android project
         id: project
         run: |
-          echo "Searching for Gradle project..."
+          ROOT=$(find jarvis-project -name "settings.gradle.kts" -type f | head -n 1)
+          ROOT=$(dirname "$ROOT")
 
-          GRADLEW=$(find jarvis-project -type f -name "gradlew" | head -n 1)
-
-          if [ -z "$GRADLEW" ]; then
-            echo "ERROR: gradlew was not found."
-            echo "ZIP contents:"
-            find jarvis-project -maxdepth 5 -type f | sort | head -200
-            exit 1
-          fi
-
-          ROOT=$(dirname "$GRADLEW")
-
-          echo "Android project root: $ROOT"
+          echo "Project root: $ROOT"
           echo "root=$ROOT" >> "$GITHUB_OUTPUT"
 
-      - name: Set up JDK 17
+      - name: Setup JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-      - name: Make Gradle executable
-        run: chmod +x "${{ steps.project.outputs.root }}/gradlew"
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
 
       - name: Build JARVIS APK
         working-directory: ${{ steps.project.outputs.root }}
-        run: ./gradlew assembleDebug --stacktrace
+        run: gradle assembleDebug --no-daemon --stacktrace
 
       - name: Upload JARVIS APK
         uses: actions/upload-artifact@v4
